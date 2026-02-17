@@ -2,7 +2,7 @@
 
 /* ================= KONSTRUKTOR ================= */
 
-NasiBot::NasiBot() : mpu(Wire, 0.1, 0.9) {}
+NasiBot::NasiBot() {}
 
 /* ================= SETUP ================= */
 
@@ -20,10 +20,126 @@ void NasiBot::begin() {
   servo.write(servoMid);
 
   Wire.begin();
-  mpu.begin();
-  mpu.calcGyroOffsets();
-
+  Wire.setClock(400000);  // 400kHz I²C-Takt
+  
+  Serial.println(F("MPU6050 wird initialisiert..."));
+  
+  // ← NEU: MPU6050 manuell aufwecken (wichtig!)
+  Wire.beginTransmission(0x68);
+  Wire.write(0x6B);  // PWR_MGMT_1 Register
+  Wire.write(0);     // Sleep-Bit löschen → MPU aufwecken
+  Wire.endTransmission(true);
+  delay(100);
+  
+  // Jetzt erst Bibliotheks-Init
+  mpu.initialize();
+  
+  // Test mit erweiterter Fehlerausgabe
+  if (!mpu.testConnection()) {
+    Serial.println(F("FEHLER: MPU6050 antwortet nicht!"));
+    Serial.println(F("Aber I²C-Adresse 0x68 wurde gefunden..."));
+    Serial.println(F("→ Evtl. defektes Modul oder Bibliotheksproblem"));
+    
+    // Trotzdem weitermachen (manchmal funktioniert es trotz false)
+    Serial.println(F("Versuche trotzdem fortzufahren..."));
+  } else {
+    Serial.println(F("MPU6050 OK ✓"));
+  }
+  
+  // Gyro auf ±250 °/s (empfindlichste Stufe)
+  mpu.setFullScaleGyroRange(MPU6050_GYRO_FS_250);
+  mpu.setFullScaleAccelRange(MPU6050_ACCEL_FS_2);
+  
+  // Kalibrierung
+  calibrateGyro();
+  
+  pidPrevTime = millis();
+  
   stop();
+  
+  Serial.println(F("\n=== NasiBot bereit! ==="));
+  Serial.println(F("Serial-Befehle: p/i/d + Zahl, r=Reset, k=Kalib"));
+}
+
+
+/* ================= KALIBRIERUNG ================= */
+
+void NasiBot::calibrateGyro() {
+  const int CAL_SAMPLES = 300;
+  Serial.print(F("Kalibrierung ("));
+  Serial.print(CAL_SAMPLES);
+  Serial.println(F(" Samples) – Roboter still halten!"));
+
+  long sumGZ = 0;
+  for (int i = 0; i < CAL_SAMPLES; i++) {
+    int16_t ax, ay, az, gx, gy, gz;
+    mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+    sumGZ += gz;
+    
+    if (i % 50 == 0) Serial.print(F("."));
+    delay(5);
+  }
+
+  gyroDriftZ = (sumGZ / (float)CAL_SAMPLES) / 131.0;
+  
+  Serial.println();
+  Serial.print(F("Drift-Offset Z: "));
+  Serial.print(gyroDriftZ, 4);
+  Serial.println(F(" °/s ✓"));
+  
+  // PID zurücksetzen
+  pidIntegral = 0.0;
+  pidPrevError = 0.0;
+}
+
+/* ================= YAW-RATE AUSLESEN ================= */
+
+float NasiBot::getYawRate() {
+  int16_t ax, ay, az, gx, gy, gz;
+  mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+  
+  // Yaw-Rate in °/s (±250°/s → LSB = 131)
+  float yawRate = (gz / 131.0) - gyroDriftZ;
+  return yawRate;
+}
+
+/* ================= PID-KORREKTUR ================= */
+
+void NasiBot::applyPIDCorrection(float yawRate) {
+  unsigned long now = millis();
+  float dt = (now - pidPrevTime) / 1000.0;
+  
+  if (dt < (LOOP_MS / 1000.0)) return;  // Feste Looprate
+  pidPrevTime = now;
+  
+  // PID-Regler: Sollwert = 0 (geradeaus)
+  float error = yawRate;
+  
+  pidIntegral += error * dt;
+  pidIntegral = constrain(pidIntegral, -50.0, 50.0);  // Anti-Windup
+  
+  float derivative = (error - pidPrevError) / dt;
+  pidPrevError = error;
+  
+  float correction = (Kp * error) + (Ki * pidIntegral) + (Kd * derivative);
+  correction = constrain(correction, -MAX_CORRECTION, MAX_CORRECTION);
+  
+  // Motor-Geschwindigkeiten anpassen
+  // Positive Yaw-Rate (Drehung nach rechts) → linker Motor schneller
+  int speedL = constrain(speed + (int)correction, 0, 255);
+  int speedR = constrain(speed - (int)correction, 0, 255);
+  
+  setTargetSpeed(speedL, speedR);
+  
+  // Debug-Ausgabe (alle 100ms)
+  static unsigned long lastPrint = 0;
+  if (now - lastPrint > 100) {
+    lastPrint = now;
+    Serial.print(F("Yaw: ")); Serial.print(yawRate, 2);
+    Serial.print(F("\tCorr: ")); Serial.print(correction, 2);
+    Serial.print(F("\tL: ")); Serial.print(speedL);
+    Serial.print(F("\tR: ")); Serial.println(speedR);
+  }
 }
 
 /* ================= MODUS ================= */
@@ -80,40 +196,39 @@ void NasiBot::autonomous() {
 
     delay(200);
     stop();
-    delay(500);
-    // MPU update mehrere Male in kurzer Schleife
-    for (int i = 0; i < 5; i++) {
-        mpu.update();
-        delay(10);
-    }
+    delay(800);
+    
+    // Nach Drehung: PID zurücksetzen und neu kalibrieren
+    pidIntegral = 0.0;
+    pidPrevError = 0.0;
+    pidPrevTime = millis();
+    
   } else {
     forward();
   }
 }
 
-
 /* ================= FAHREN ================= */
 
 void NasiBot::forward() {
-  mpu.update();
-  float z = mpu.getGyroAngleZ();
-
-  int l = speed;
-  int r = speed;
-
-  if (z > 0) r -= diffFactor * z;
-  else if (z < 0) l += diffFactor * z;
-
-  setTargetSpeed(l, r);
-
+  // Motorrichtung setzen
   digitalWrite(LV, HIGH);
   digitalWrite(LR, LOW);
   digitalWrite(RV, HIGH);
   digitalWrite(RR, LOW);
+  
+  // PID-basierte Geradeausfahrt
+  float yawRate = getYawRate();
+  applyPIDCorrection(yawRate);
 }
 
 void NasiBot::backward() {
   setTargetSpeed(speed, speed);
+
+  analogWrite(L_SPEED, speed);
+  analogWrite(R_SPEED, speed);
+  currentSpeedL = speed;
+  currentSpeedR = speed;
 
   digitalWrite(LV, LOW);
   digitalWrite(LR, HIGH);
@@ -125,11 +240,13 @@ void NasiBot::turnLeft() {
   int turnSpeed = speed * 0.6;
   setTargetSpeed(turnSpeed, turnSpeed);
 
-  // linker Motor rückwärts
+  analogWrite(L_SPEED, turnSpeed);
+  analogWrite(R_SPEED, turnSpeed);
+  currentSpeedL = turnSpeed;
+  currentSpeedR = turnSpeed;
+
   digitalWrite(LV, LOW);
   digitalWrite(LR, HIGH);
-
-  // rechter Motor vorwärts
   digitalWrite(RV, HIGH);
   digitalWrite(RR, LOW);
 }
@@ -138,22 +255,28 @@ void NasiBot::turnRight() {
   int turnSpeed = speed * 0.6;
   setTargetSpeed(turnSpeed, turnSpeed);
 
-  // linker Motor vorwärts
+  analogWrite(L_SPEED, turnSpeed);
+  analogWrite(R_SPEED, turnSpeed);
+  currentSpeedL = turnSpeed;
+  currentSpeedR = turnSpeed;
+
   digitalWrite(LV, HIGH);
   digitalWrite(LR, LOW);
-
-  // rechter Motor rückwärts
   digitalWrite(RV, LOW);
   digitalWrite(RR, HIGH);
 }
 
 void NasiBot::stop() {
-  setTargetSpeed(0, 0);
+    setTargetSpeed(0, 0);
+    currentSpeedL = 0;
+    currentSpeedR = 0;
+    analogWrite(L_SPEED, 0);
+    analogWrite(R_SPEED, 0);
 
-  digitalWrite(LV, LOW);
-  digitalWrite(LR, LOW);
-  digitalWrite(RV, LOW);
-  digitalWrite(RR, LOW);
+    digitalWrite(LV, LOW);
+    digitalWrite(LR, LOW);
+    digitalWrite(RV, LOW);
+    digitalWrite(RR, LOW);
 }
 
 /* ================= GESCHWINDIGKEIT ================= */
@@ -163,23 +286,19 @@ void NasiBot::setTargetSpeed(int l, int r) {
   targetSpeedR = constrain(r, 0, 255);
 }
 
-
 void NasiBot::updateAcceleration() {
   if (millis() - lastAccelUpdate < accelInterval) return;
   lastAccelUpdate = millis();
 
-  // Ziel annähern
   currentSpeedL += constrain(targetSpeedL - currentSpeedL, -acceleration, acceleration);
   currentSpeedR += constrain(targetSpeedR - currentSpeedR, -acceleration, acceleration);
 
-  // Mindest-PWM erzwingen (nur wenn Ziel > 0)
   int pwmL = currentSpeedL;
   int pwmR = currentSpeedR;
 
   if (targetSpeedL > 0 && pwmL < minPWM) pwmL = minPWM;
   if (targetSpeedR > 0 && pwmR < minPWM) pwmR = minPWM;
 
-  // Stop wirklich = 0
   if (targetSpeedL == 0) pwmL = 0;
   if (targetSpeedR == 0) pwmR = 0;
 
@@ -201,4 +320,48 @@ long NasiBot::getDistance() {
 
   if (distance <= 0 || distance > 400) distance = 400;
   return distance;
+}
+
+/* ================= SERIAL COMMANDS (OPTIONAL) ================= */
+
+void NasiBot::processSerialCommands() {
+  if (!Serial.available()) return;
+
+  String input = Serial.readStringUntil('\n');
+  input.trim();
+  if (input.length() == 0) return;
+
+  char cmd = input.charAt(0);
+  float val = input.substring(1).toFloat();
+
+  switch (cmd) {
+    case 'p': case 'P':
+      Kp = val;
+      Serial.print(F("Kp = ")); Serial.println(Kp);
+      break;
+    case 'i': case 'I':
+      Ki = val;
+      Serial.print(F("Ki = ")); Serial.println(Ki);
+      break;
+    case 'd': case 'D':
+      Kd = val;
+      Serial.print(F("Kd = ")); Serial.println(Kd);
+      break;
+    case 's': case 'S':
+      speed = constrain((int)val, 0, 255);
+      Serial.print(F("Speed = ")); Serial.println(speed);
+      break;
+    case 'r': case 'R':
+      pidIntegral = 0.0;
+      pidPrevError = 0.0;
+      Serial.println(F("PID zurückgesetzt ✓"));
+      break;
+    case 'k': case 'K':
+      stop();
+      Serial.println(F("Neu-Kalibrierung..."));
+      calibrateGyro();
+      break;
+    default:
+      Serial.println(F("Befehle: p/i/d/s + Zahl, r=Reset, k=Kalib"));
+  }
 }

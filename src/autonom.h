@@ -4,13 +4,13 @@
 #include <Arduino.h>
 #include <Servo.h>
 #include <Wire.h>
-#include <MPU6050_tockn.h>
+#include <MPU6050.h>
 
 /* ================= MODI ================= */
 
 enum DriveMode {
-  DRIVE_DIRECT,      // sofortige PWM (altes Verhalten)
-  DRIVE_ACCELERATED  // sanfte Beschleunigung
+  DRIVE_DIRECT,
+  DRIVE_ACCELERATED
 };
 
 /* ================= KLASSE ================= */
@@ -32,6 +32,9 @@ public:
 
   // Modus
   void setDriveMode(DriveMode mode);
+  
+  // PID-Tuning (optional über Serial)
+  void processSerialCommands();
 
 private:
   /* ===== Hardware ===== */
@@ -54,28 +57,45 @@ private:
   int servoMid = 93;
   int servoTurn = 70;
   int minDistance = 30;
-  float diffFactor = 4.0;
+
+  /* ===== PID-Parameter ===== */
+  float Kp = 1.2;           // Proportional
+  float Ki = 0.03;          // Integral
+  float Kd = 0.08;          // Derivative
+  float pidIntegral = 0.0;
+  float pidPrevError = 0.0;
+  unsigned long pidPrevTime = 0;
+  const int MAX_CORRECTION = 80;
+  const int LOOP_MS = 10;   // 10ms = 100Hz
 
   /* ===== Geschwindigkeiten ===== */
   int currentSpeedL = 0;
   int currentSpeedR = 0;
   int targetSpeedL = 0;
   int targetSpeedR = 0;
-  int minPWM = 50;   // Startwert – evtl. feinjustieren
+  int minPWM = 150;
 
   /* ===== Beschleunigung ===== */
   DriveMode driveMode = DRIVE_DIRECT;
-  int acceleration = 10;
+  int acceleration = 15;
   unsigned long lastAccelUpdate = 0;
   const int accelInterval = 80;
 
+  /* ===== MPU6050 Variablen ===== */
+  float gyroDriftZ = 0.0;   // Kalibrierter Offset
+  
   /* ===== Sensorik ===== */
   long getDistance();
+  
+  /* ===== MPU-Funktionen ===== */
+  void calibrateGyro();
+  float getYawRate();       // Gibt die aktuelle Yaw-Rate zurück
 
   /* ===== Intern ===== */
   void setTargetSpeed(int l, int r);
   void applyMotorSpeed();
   void updateAcceleration();
+  void applyPIDCorrection(float yawRate);  // NEU: PID-basierte Korrektur
 };
 
 #endif
