@@ -323,5 +323,3 @@ Stop:       Alle = 0
 ```
 
 ---
-
-Möchtest du eine bestimmte Methode noch detaillierter erklärt haben? 🤖
