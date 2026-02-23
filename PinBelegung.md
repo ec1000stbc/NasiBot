@@ -1,0 +1,17 @@
+LED_FRONT_LEFT:  = A2;
+LED_FRONT_RIGHT: = A3;
+LED_TOP_LEFT:    = 9;
+LED_TOP_RIGHT:   = 10;
+SERVO_PIN = 12;
+LV       = 8;
+LR       = 7;
+RV       = 5;
+RR       = 6;
+L_SPEED  = 11;
+R_SPEED  = 3;
+TRIG     = 4;
+ECHO     = 2;
+IRLeft   = A1
+IRRight  = A0
+MPU_SDA  = A4
+MPU_SCL  = A5
