@@ -265,32 +265,33 @@ void NasiBot::turnRight() {
 }
 
 void NasiBot::curveLeft() {
-  // Linke Spur langsamer → Bogen nach links
-  // curveRatio bestimmt, wie eng die Kurve ist (0.0 = Stelle drehen, 1.0 = geradeaus)
   currentStatus = STATUS_TURN_LEFT;
-  int outer = speed;
-  int inner = (int)(speed * curveRatio);
+  int outer = (int)(speed * curveRatio * 4);
+  int inner = (int)(speed * curveRatio);  // 0.0 → Innenrad stoppt
 
   digitalWrite(LV, HIGH);
   digitalWrite(LR, LOW);
   digitalWrite(RV, HIGH);
   digitalWrite(RR, LOW);
 
-  setTargetSpeed(inner, outer);  // Links langsamer → Kurve nach links
+  analogWrite(L_SPEED, inner);
+  analogWrite(R_SPEED, outer);
+  setTargetSpeed(inner, outer);
 }
 
 void NasiBot::curveRight() {
-  // Rechte Spur langsamer → Bogen nach rechts
   currentStatus = STATUS_TURN_RIGHT;
-  int outer = speed;
-  int inner = (int)(speed * curveRatio);
+  int outer = (int)(speed * curveRatio * 4);
+  int inner = (int)(speed * curveRatio);  // 0.0 → Innenrad stoppt
 
   digitalWrite(LV, HIGH);
   digitalWrite(LR, LOW);
   digitalWrite(RV, HIGH);
   digitalWrite(RR, LOW);
 
-  setTargetSpeed(outer, inner);  // Rechts langsamer → Kurve nach rechts
+  analogWrite(L_SPEED, outer);
+  analogWrite(R_SPEED, inner);
+  setTargetSpeed(outer, inner);
 }
 
 void NasiBot::stop() {

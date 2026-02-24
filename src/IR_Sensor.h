@@ -17,6 +17,8 @@ class IRSensor {
     bool detected();        // Linie erkannt?
     int  readRaw();         // digitalRead direkt
     int  getPin();
+    int  readAnalog();
+    bool detectedAnalog(int threshold = 500);  // Standardschwellwert anpassbar
 
   private:
     int pin;

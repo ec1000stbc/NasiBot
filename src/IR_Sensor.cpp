@@ -13,6 +13,14 @@ bool IRSensor::detected() {
   return digitalRead(pin) == LOW;
 }
 
+int IRSensor::readAnalog() {
+  return analogRead(pin);  // 0–1023
+}
+
+bool IRSensor::detectedAnalog(int threshold) {
+  return analogRead(pin) > threshold;  // hoch = dunkel = Linie
+}
+
 int IRSensor::readRaw() {
   return digitalRead(pin);
 }
@@ -20,3 +28,4 @@ int IRSensor::readRaw() {
 int IRSensor::getPin() {
   return pin;
 }
+

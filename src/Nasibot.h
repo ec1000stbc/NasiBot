@@ -59,7 +59,7 @@ private:
   int servoMid      = 93;
   int servoTurn     = 70;
   int minDistance   = 30;
-  float curveRatio  = 0.5;  // Innenspur-Faktor für curveLeft/Right (0.0–1.0)
+  float curveRatio  = 0.3;  // Innenspur-Faktor für curveLeft/Right (0.0 = Innenrad stop, 1.0 = geradeaus)
   MoveStatus currentStatus = STATUS_STOPPED;
 
   /* ===== PID-Parameter ===== */
@@ -77,7 +77,7 @@ private:
   int currentSpeedR = 0;
   int targetSpeedL  = 0;
   int targetSpeedR  = 0;
-  int minPWM        = 150;
+  int minPWM        = 35;
 
   /* ===== Beschleunigung ===== */
   DriveMode driveMode      = DRIVE_DIRECT;

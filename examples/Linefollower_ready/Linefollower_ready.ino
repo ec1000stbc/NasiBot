@@ -12,20 +12,22 @@ const int IN_D0_R = A0;
 IRSensor irLeft(IN_D0_L);
 IRSensor irRight(IN_D0_R);
 
+const int THRESHOLD = 300;  // Schwellwert zwischen weiß (~36) und schwarz (~1018)
+
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
 
   irLeft.begin();
   irRight.begin();
 
   bot.begin();
-  bot.setSpeed(100);              // Geschwindigkeit begrenzen (0–255)
-  bot.setDriveMode(DRIVE_ACCELERATED);
+  bot.setSpeed(90);  // Geschwindigkeit (0–255) – höher = schärfere Kurven möglich
+  bot.setDriveMode(DRIVE_DIRECT);
 }
 
 void loop() {
-  bool left  = irLeft.detected();
-  bool right = irRight.detected();
+  bool left  = irLeft.detectedAnalog(THRESHOLD);
+  bool right = irRight.detectedAnalog(THRESHOLD);
 
   if (!left && !right) {
     // Beide Sensoren auf weiß → Linie liegt zwischen den Sensoren → geradeaus
@@ -35,12 +37,14 @@ void loop() {
   } else if (left && !right) {
     // Linker Sensor auf schwarz → zu weit nach links → nach rechts korrigieren
     Serial.println("LINE: TOO LEFT");
-    bot.curveRight();
+    bot.curveLeft();
+    delay(120);
 
   } else if (!left && right) {
     // Rechter Sensor auf schwarz → zu weit nach rechts → nach links korrigieren
     Serial.println("LINE: TOO RIGHT");
-    bot.curveLeft();
+    bot.curveRight();
+    delay(120);
 
   } else {
     // Beide Sensoren auf schwarz → Kreuzung oder Linienende → anhalten
@@ -49,5 +53,5 @@ void loop() {
   }
 
   bot.update();
-  delay(50);
+  delay(30);
 }
