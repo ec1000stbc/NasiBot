@@ -19,11 +19,6 @@ und LED-Steuerung in einer einheitlichen Struktur zusammen.
 
 ## 💡 Features – LED
 
-### Led_Basic
-- Ein/Aus
-- Toggle
-- Statusabfrage
-
 ### Led_Dimm
 - PWM-Dimmen
 - SoftPWM-Unterstützung für nicht-PWM-Pins
